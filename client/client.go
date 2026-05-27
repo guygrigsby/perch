@@ -122,8 +122,13 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 		return fmt.Errorf("%s %s: %s: %s", method, path, res.Status, strings.TrimSpace(string(b)))
 	}
 	if out != nil {
-		return json.NewDecoder(res.Body).Decode(out)
+		if err := json.NewDecoder(res.Body).Decode(out); err != nil {
+			return fmt.Errorf("%s %s: decode response: %w", method, path, err)
+		}
+		return nil
 	}
+	// Drain so the connection can be reused before the deferred Close.
+	_, _ = io.Copy(io.Discard, res.Body)
 	return nil
 }
 

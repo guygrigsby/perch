@@ -189,3 +189,20 @@ func TestClient_NoTokenNoAuthHeader(t *testing.T) {
 		t.Error("no token must mean no Authorization header")
 	}
 }
+
+func TestClient_DecodeErrorIsWrapped(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("this is not json"))
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "")
+	var out struct{ Name string }
+	err := c.GetJSON(context.Background(), "/x", &out)
+	if err == nil {
+		t.Fatal("expected decode error, got nil")
+	}
+	if !strings.Contains(err.Error(), "GET /x") || !strings.Contains(err.Error(), "decode response") {
+		t.Errorf("error should carry method/path + decode context: %v", err)
+	}
+}
