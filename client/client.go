@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/guygrigsby/perch/internal/xdg"
+	"github.com/spf13/cobra"
 )
 
 // Flags holds the host-targeting flags bound to the cobra root's persistent
@@ -55,4 +56,28 @@ func ResolveToken(app string, f *Flags) (string, error) {
 // envKey builds the <APP>_<SUFFIX> environment variable name.
 func envKey(app, suffix string) string {
 	return strings.ToUpper(app) + "_" + suffix
+}
+
+// Root builds the cobra root command with shared --addr/--token persistent
+// flags. app is the lowercase program id (drives env-var names and the token
+// path). defaultAddr is the app's own loopback default; perch holds no port
+// opinion. The returned *Flags is populated when the command tree parses.
+func Root(app, short, long, defaultAddr string) (*cobra.Command, *Flags) {
+	f := &Flags{}
+	root := &cobra.Command{
+		Use:           app,
+		Short:         short,
+		Long:          long,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+	}
+	addrDefault := os.Getenv(envKey(app, "ADDR_URL"))
+	if addrDefault == "" {
+		addrDefault = defaultAddr
+	}
+	pf := root.PersistentFlags()
+	pf.StringVar(&f.Addr, "addr", addrDefault, app+" server URL")
+	pf.StringVar(&f.Token, "token", os.Getenv(envKey(app, "API_TOKEN")),
+		"bearer token (defaults to "+envKey(app, "API_TOKEN")+" or the cli.token file)")
+	return root, f
 }

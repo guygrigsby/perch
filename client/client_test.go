@@ -79,3 +79,37 @@ func TestResolveToken_NoneIsEmptyNotError(t *testing.T) {
 		t.Errorf("got %q, want empty", tok)
 	}
 }
+
+func TestRoot_AddrDefaultsToArg(t *testing.T) {
+	t.Setenv("PLUMA_ADDR_URL", "")
+	root, f := Root("pluma", "short", "long", "http://127.0.0.1:8787")
+	if err := root.PersistentFlags().Parse(nil); err != nil {
+		t.Fatal(err)
+	}
+	if f.Addr != "http://127.0.0.1:8787" {
+		t.Errorf("got %q, want the default", f.Addr)
+	}
+	if root.Use != "pluma" {
+		t.Errorf("Use = %q", root.Use)
+	}
+}
+
+func TestRoot_AddrEnvOverridesDefault(t *testing.T) {
+	t.Setenv("PLUMA_ADDR_URL", "http://10.0.0.5:8787")
+	_, f := Root("pluma", "short", "long", "http://127.0.0.1:8787")
+	// env folds into the flag default; with no --addr passed, f.Addr is env.
+	if f.Addr != "http://10.0.0.5:8787" {
+		t.Errorf("got %q, want env value", f.Addr)
+	}
+}
+
+func TestRoot_AddrFlagOverridesEnv(t *testing.T) {
+	t.Setenv("PLUMA_ADDR_URL", "http://10.0.0.5:8787")
+	root, f := Root("pluma", "short", "long", "http://127.0.0.1:8787")
+	if err := root.PersistentFlags().Parse([]string{"--addr", "http://1.2.3.4:9999"}); err != nil {
+		t.Fatal(err)
+	}
+	if f.Addr != "http://1.2.3.4:9999" {
+		t.Errorf("got %q, want flag value", f.Addr)
+	}
+}
