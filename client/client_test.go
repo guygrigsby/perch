@@ -1,8 +1,13 @@
 package client
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -111,5 +116,76 @@ func TestRoot_AddrFlagOverridesEnv(t *testing.T) {
 	}
 	if f.Addr != "http://1.2.3.4:9999" {
 		t.Errorf("got %q, want flag value", f.Addr)
+	}
+}
+
+func TestClient_GetJSONDecodesAndSendsBearer(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		_ = json.NewEncoder(w).Encode(map[string]string{"name": "pip"})
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "sekret")
+	var out struct{ Name string }
+	if err := c.GetJSON(context.Background(), "/whoami", &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Name != "pip" {
+		t.Errorf("decoded %+v", out)
+	}
+	if gotAuth != "Bearer sekret" {
+		t.Errorf("auth header = %q", gotAuth)
+	}
+}
+
+func TestClient_PostJSONSendsBody(t *testing.T) {
+	var gotBody map[string]string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "")
+	if err := c.PostJSON(context.Background(), "/echo", map[string]string{"hi": "there"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if gotBody["hi"] != "there" {
+		t.Errorf("server saw %+v", gotBody)
+	}
+}
+
+func TestClient_Non2xxIsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "nope", http.StatusForbidden)
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "")
+	err := c.GetJSON(context.Background(), "/x", nil)
+	if err == nil {
+		t.Fatal("expected error on 403")
+	}
+	if !strings.Contains(err.Error(), "403") || !strings.Contains(err.Error(), "nope") {
+		t.Errorf("error should carry status + body: %v", err)
+	}
+}
+
+func TestClient_NoTokenNoAuthHeader(t *testing.T) {
+	var hadAuth bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, hadAuth = r.Header["Authorization"]
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "")
+	if err := c.GetJSON(context.Background(), "/x", nil); err != nil {
+		t.Fatal(err)
+	}
+	if hadAuth {
+		t.Error("no token must mean no Authorization header")
 	}
 }

@@ -3,11 +3,17 @@
 package client
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/guygrigsby/perch/internal/xdg"
 	"github.com/spf13/cobra"
@@ -56,6 +62,69 @@ func ResolveToken(app string, f *Flags) (string, error) {
 // envKey builds the <APP>_<SUFFIX> environment variable name.
 func envKey(app, suffix string) string {
 	return strings.ToUpper(app) + "_" + suffix
+}
+
+// Client is a thin JSON-over-HTTP client carrying a base address and an
+// optional bearer token.
+type Client struct {
+	addr  string
+	token string
+	hc    *http.Client
+}
+
+// NewClient builds a Client with a 10s timeout. Trailing slash on addr is
+// trimmed so callers pass paths like "/api/whoami".
+func NewClient(addr, token string) *Client {
+	return &Client{
+		addr:  strings.TrimRight(addr, "/"),
+		token: token,
+		hc:    &http.Client{Timeout: 10 * time.Second},
+	}
+}
+
+// GetJSON GETs path and decodes a 2xx JSON body into out (out may be nil).
+func (c *Client) GetJSON(ctx context.Context, path string, out any) error {
+	return c.do(ctx, http.MethodGet, path, nil, out)
+}
+
+// PostJSON POSTs body as JSON to path and decodes a 2xx response into out
+// (body and out may each be nil).
+func (c *Client) PostJSON(ctx context.Context, path string, body, out any) error {
+	return c.do(ctx, http.MethodPost, path, body, out)
+}
+
+func (c *Client) do(ctx context.Context, method, path string, body, out any) error {
+	var rdr io.Reader
+	if body != nil {
+		buf, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		rdr = bytes.NewReader(buf)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.addr+path, rdr)
+	if err != nil {
+		return err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	res, err := c.hc.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		b, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+		return fmt.Errorf("%s %s: %s: %s", method, path, res.Status, strings.TrimSpace(string(b)))
+	}
+	if out != nil {
+		return json.NewDecoder(res.Body).Decode(out)
+	}
+	return nil
 }
 
 // Root builds the cobra root command with shared --addr/--token persistent
