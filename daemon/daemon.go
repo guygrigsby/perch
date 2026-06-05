@@ -4,6 +4,7 @@ package daemon
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -39,9 +40,24 @@ func SignalContext() (context.Context, context.CancelFunc) {
 //	defer cancel()
 //	err := daemon.Serve(ctx, srv, 10*time.Second)
 func Serve(ctx context.Context, srv *http.Server, grace time.Duration) error {
+	ln, err := net.Listen("tcp", srv.Addr)
+	if err != nil {
+		return err
+	}
+	return ServeListener(ctx, srv, ln, grace)
+}
+
+// ServeListener is Serve over an already-built listener (see Listen), so the
+// caller chooses the transport (unix socket or TCP). It runs srv until ctx is
+// cancelled, then calls srv.Shutdown with the given grace timeout. Returns the
+// first non-ErrServerClosed error.
+//
+//	ln, err := daemon.Listen("unix:///run/foo.sock")
+//	err = daemon.ServeListener(ctx, srv, ln, 10*time.Second)
+func ServeListener(ctx context.Context, srv *http.Server, ln net.Listener, grace time.Duration) error {
 	errc := make(chan error, 1)
 	go func() {
-		err := srv.ListenAndServe()
+		err := srv.Serve(ln)
 		if errors.Is(err, http.ErrServerClosed) {
 			err = nil
 		}
@@ -58,6 +74,6 @@ func Serve(ctx context.Context, srv *http.Server, grace time.Duration) error {
 		if err := srv.Shutdown(shutCtx); err != nil {
 			return err
 		}
-		return <-errc // drain ListenAndServe's return (nil after clean close)
+		return <-errc // drain Serve's return (nil after clean close)
 	}
 }

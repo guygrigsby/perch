@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -72,13 +73,29 @@ type Client struct {
 	hc    *http.Client
 }
 
+// unixScheme is the addr prefix that selects a unix domain socket, matching
+// daemon.UnixScheme on the server side.
+const unixScheme = "unix://"
+
 // NewClient builds a Client with a 10s timeout. Trailing slash on addr is
-// trimmed so callers pass paths like "/api/whoami".
+// trimmed so callers pass paths like "/api/whoami". An addr of
+// "unix://<path>" dials that unix domain socket; the HTTP host becomes a fixed
+// placeholder since the socket path, not the host, selects the daemon.
 func NewClient(addr, token string) *Client {
+	hc := &http.Client{Timeout: 10 * time.Second}
+	if path, ok := strings.CutPrefix(addr, unixScheme); ok {
+		hc.Transport = &http.Transport{
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return (&net.Dialer{}).DialContext(ctx, "unix", path)
+			},
+		}
+		// Requests need a valid http URL; the host is ignored by the dialer.
+		addr = "http://unix"
+	}
 	return &Client{
 		addr:  strings.TrimRight(addr, "/"),
 		token: token,
-		hc:    &http.Client{Timeout: 10 * time.Second},
+		hc:    hc,
 	}
 }
 
