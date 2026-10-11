@@ -168,7 +168,10 @@ func Root(app, short, long, defaultAddr string) (*cobra.Command, *Flags) {
 	}
 	pf := root.PersistentFlags()
 	pf.StringVar(&f.Addr, "addr", addrDefault, app+" server URL")
-	pf.StringVar(&f.Token, "token", os.Getenv(envKey(app, "API_TOKEN")),
+	// The default stays empty: cobra prints a flag's default in --help, and
+	// ResolveToken already reads the env var, so folding it in here would only
+	// print the secret.
+	pf.StringVar(&f.Token, "token", "",
 		"bearer token (defaults to "+envKey(app, "API_TOKEN")+" or the cli.token file)")
 	return root, f
 }

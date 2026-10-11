@@ -206,3 +206,20 @@ func TestClient_DecodeErrorIsWrapped(t *testing.T) {
 		t.Errorf("error should carry method/path + decode context: %v", err)
 	}
 }
+
+// The token env var must not become the flag's default: cobra prints a
+// flag's default in --help, which would print the secret to the terminal.
+func TestRoot_HelpNeverPrintsTheEnvToken(t *testing.T) {
+	t.Setenv("PLUMA_API_TOKEN", "s3cr3t-token-value")
+	root, _ := Root("pluma", "short", "long", "http://127.0.0.1:8787")
+	if def := root.PersistentFlags().Lookup("token").DefValue; def != "" {
+		t.Errorf("token flag default = %q, want empty", def)
+	}
+	if usage := root.PersistentFlags().FlagUsages(); strings.Contains(usage, "s3cr3t") {
+		t.Errorf("help leaks the token: %s", usage)
+	}
+	// The env token still resolves; only the help text changed.
+	if tok, err := ResolveToken("pluma", &Flags{}); err != nil || tok != "s3cr3t-token-value" {
+		t.Errorf("ResolveToken = %q, %v; want the env token", tok, err)
+	}
+}
