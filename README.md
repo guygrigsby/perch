@@ -1,7 +1,7 @@
 # perch
 
 Shared foundation for grigsby daemon/CLI apps (talon, pluma, and friends).
-Three small packages you import instead of copy-pasting, so a fix lands once.
+Small packages you import instead of copy-pasting, so a fix lands once.
 
 - `client`: cobra root with `--addr`/`--token`, `ResolveToken`
   (flag → `<APP>_API_TOKEN` → `~/.config/<app>/cli.token`), and a
@@ -9,6 +9,11 @@ Three small packages you import instead of copy-pasting, so a fix lands once.
 - `config`: `Load(app, &cfg)` from `~/.config/<app>/config.toml`
   (missing file keeps defaults).
 - `daemon`: `ResolveAddr`, `SignalContext`, and a graceful `Serve`.
+- `telemetry`: OTLP/HTTP metrics from the standard `OTEL_*` variables, a
+  no-op when `OTEL_EXPORTER_OTLP_ENDPOINT` is unset. Only the labels the app
+  allows are exported, every histogram is exponential (at most 40 buckets)
+  and the export interval is never under a minute, which keeps an app inside
+  Grafana Cloud's included series and data points. Lifted from sockd.
 
 ## Conventions
 
